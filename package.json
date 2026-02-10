@@ -1,0 +1,12 @@
+{
+  "name": "google-scholar-cli",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "test": "bun test",
+    "build": "bun build src/main.ts --compile --outfile scholar"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
+}
