@@ -1,13 +1,19 @@
-import { resolveCookies } from "../auth.js";
-import { getXsrf, search } from "../api/scholar.js";
+import { existsSync } from "node:fs";
+import { resolveCookies, resolveAllCookies } from "../auth.js";
+import type { Cookies, BrowserCookie } from "../auth.js";
+import { getXsrf, search, fetchBibtex, downloadPdf } from "../api/scholar.js";
 import { parseResultCard } from "../util/html.js";
+import { injectAbstract } from "../util/bibtex.js";
+import { sanitizeFilename } from "../util/filename.js";
 import { printTable, printJson, printError, printProgress } from "../output.js";
-import type { ScholarResult } from "../util/html.js";
+import type { ScholarResult, FullTextLink } from "../util/html.js";
 
 interface SearchFlags {
   json: boolean;
   interactive: boolean;
   help: boolean;
+  bibtex: boolean;
+  download: boolean;
 }
 
 export async function cmdSearch(
@@ -63,6 +69,10 @@ async function oneShot(query: string, flags: SearchFlags): Promise<number> {
     // Sort by position
     results.sort((a, b) => a.position - b.position);
 
+    if (flags.bibtex) {
+      return bibtexOutput(results, cookies, flags);
+    }
+
     if (flags.json) {
       printJson(results);
     } else {
@@ -87,8 +97,16 @@ async function oneShot(query: string, flags: SearchFlags): Promise<number> {
         if (r.url) {
           console.log(`    ${r.url}`);
         }
+        for (const link of r.fullTextLinks) {
+          console.log(`    ${link.label}: ${link.url}`);
+        }
         console.log("");
       }
+    }
+
+    if (flags.download) {
+      const allCookies = resolveAllCookies();
+      await downloadResults(results, cookies, allCookies);
     }
 
     return 0;
@@ -97,6 +115,39 @@ async function oneShot(query: string, flags: SearchFlags): Promise<number> {
     printError(err instanceof Error ? err.message : String(err));
     return 1;
   }
+}
+
+async function bibtexOutput(
+  results: ScholarResult[],
+  cookies: Cookies,
+  flags: SearchFlags,
+): Promise<number> {
+  const entries: Array<{ clusterId: string; bibtex: string }> = [];
+
+  for (const r of results) {
+    if (!r.clusterId) {
+      console.error(`Warning: skipping result "${r.title}" (no cluster ID)`);
+      continue;
+    }
+
+    printProgress(`Fetching BibTeX for ${r.clusterId}...`);
+    const rawBibtex = await fetchBibtex(r.clusterId, cookies);
+    const bibtex = injectAbstract(rawBibtex, r.snippet);
+    entries.push({ clusterId: r.clusterId, bibtex });
+  }
+
+  process.stderr.write("\r\x1b[K");
+
+  if (flags.json) {
+    printJson(entries);
+  } else {
+    for (let i = 0; i < entries.length; i++) {
+      if (i > 0) console.log("");
+      console.log(entries[i].bibtex);
+    }
+  }
+
+  return 0;
 }
 
 async function interactiveSearch(flags: SearchFlags): Promise<number> {
@@ -181,6 +232,59 @@ async function interactiveSearch(flags: SearchFlags): Promise<number> {
   }
 }
 
+/**
+ * Pick the best full-text link for downloading:
+ * prefer type "pdf", then "link", skip "html".
+ */
+function pickBestLink(links: FullTextLink[]): FullTextLink | null {
+  const pdf = links.find((l) => l.type === "pdf");
+  if (pdf) return pdf;
+  const link = links.find((l) => l.type === "link");
+  if (link) return link;
+  return null;
+}
+
+/**
+ * Download PDFs for all results that have full-text links.
+ */
+async function downloadResults(
+  results: ScholarResult[],
+  cookies: Cookies,
+  allCookies?: BrowserCookie[],
+): Promise<void> {
+  let downloaded = 0;
+  let skipped = 0;
+
+  for (const r of results) {
+    if (r.fullTextLinks.length === 0) continue;
+
+    const bestLink = pickBestLink(r.fullTextLinks);
+    if (!bestLink) continue;
+
+    const filename = sanitizeFilename(r.title) + ".pdf";
+
+    if (existsSync(filename)) {
+      process.stderr.write(`Skipping ${filename} (already exists)\n`);
+      skipped++;
+      continue;
+    }
+
+    process.stderr.write(`Downloading ${filename}...\n`);
+    try {
+      await downloadPdf(bestLink.url, filename, cookies, allCookies);
+      downloaded++;
+    } catch (err) {
+      process.stderr.write(
+        `Failed to download ${filename}: ${err instanceof Error ? err.message : String(err)}\n`,
+      );
+    }
+  }
+
+  process.stderr.write(
+    `\nDownload complete: ${downloaded} downloaded, ${skipped} skipped\n`,
+  );
+}
+
 function printSearchUsage(): void {
   console.log(`scholar search - Google Scholar Labs AI-enhanced search
 
@@ -188,11 +292,15 @@ Usage: scholar search "question" [options]
 
 Options:
   --json          Output as JSON
+  --bibtex        Fetch BibTeX citations for each result (with abstract)
+  --download      Download PDFs for results with full-text links
   --interactive   Interactive REPL mode with follow-up questions
   --help          Show this help
 
 Examples:
   scholar search "what are the key papers on attention mechanisms"
   scholar search "compare BERT and GPT architectures" --json
+  scholar search "attention is all you need" --bibtex
+  scholar search "attention is all you need" --download
   scholar search --interactive`);
 }

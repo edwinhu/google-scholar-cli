@@ -5,6 +5,12 @@
  * methods only (zero external dependencies).
  */
 
+export interface FullTextLink {
+  url: string;
+  label: string;
+  type: string;
+}
+
 export interface ScholarResult {
   title: string;
   authors: string;
@@ -14,6 +20,7 @@ export interface ScholarResult {
   snippet: string;
   url: string;
   pdfUrl: string | null;
+  fullTextLinks: FullTextLink[];
   citations: number;
   clusterId: string;
   position: number;
@@ -54,6 +61,81 @@ function decodeEntities(text: string): string {
     .replace(/&#8208;/g, "-")
     .replace(/&uuml;/g, "\u00FC")
     .replace(/&#(\d+);/g, (_match, code) => String.fromCharCode(Number(code)));
+}
+
+/**
+ * Extract a complete section starting with `startTag` using div-depth counting
+ * to find the matching closing `</div>`. Returns the full inner HTML of the
+ * section, or empty string if not found.
+ */
+function extractSectionByDepth(html: string, startTag: string): string {
+  const startIdx = html.indexOf(startTag);
+  if (startIdx === -1) return "";
+
+  // Find the opening '<div' before startTag
+  const divStart = html.lastIndexOf("<div", startIdx);
+  if (divStart === -1) return "";
+
+  let depth = 0;
+  let i = divStart;
+  while (i < html.length) {
+    if (html.startsWith("<div", i)) {
+      depth++;
+      i += 4;
+    } else if (html.startsWith("</div>", i)) {
+      depth--;
+      if (depth === 0) {
+        // Return everything between the opening tag end and this closing tag
+        const contentStart = html.indexOf(">", divStart) + 1;
+        return html.slice(contentStart, i);
+      }
+      i += 6;
+    } else {
+      i++;
+    }
+  }
+  return "";
+}
+
+/**
+ * Extract all <a> tags from an HTML string and return FullTextLink objects.
+ */
+function extractLinksFromHtml(sectionHtml: string): FullTextLink[] {
+  const links: FullTextLink[] = [];
+  const anchorRegex = /<a\s[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = anchorRegex.exec(sectionHtml)) !== null) {
+    const rawUrl = match[1];
+    const rawContent = match[2];
+    let url = decodeEntities(rawUrl);
+    // Resolve relative Scholar URLs to absolute
+    if (url.startsWith("/")) {
+      url = "https://scholar.google.com" + url;
+    }
+    const label = decodeEntities(stripTags(rawContent)).replace(/\s+/g, " ").trim();
+
+    let type: string;
+    if (rawContent.includes("[PDF]")) {
+      type = "pdf";
+    } else if (rawContent.includes("[HTML]")) {
+      type = "html";
+    } else {
+      type = "link";
+    }
+
+    links.push({ url, label, type });
+  }
+
+  return links;
+}
+
+/**
+ * Check if a link text matches a standard Scholar footer action
+ * (Cited by, Related articles, All N versions, Save, Cite).
+ */
+function isScholarFooterAction(label: string): boolean {
+  return /^(Cited by|Related articles|All \d+ versions?|Save|Cite|Library)/.test(label);
 }
 
 /**
@@ -112,6 +194,7 @@ export function parseResultCard(html: string, fallbackPosition: number): Scholar
       snippet: "",
       url: "",
       pdfUrl: null,
+      fullTextLinks: [],
       citations: 0,
       clusterId: "",
       position: fallbackPosition,
@@ -137,15 +220,33 @@ export function parseResultCard(html: string, fallbackPosition: number): Scholar
   const urlMatch = titleLinkHtml.match(/href="([^"]*)"/);
   const url = urlMatch ? decodeEntities(urlMatch[1]) : "";
 
-  // PDF URL: href of <a> inside <div class="gs_ggs">
-  let pdfUrl: string | null = null;
-  const ggsSection = extractBetween(html, '<div class="gs_ggs', "</div>");
+  // Full-text links: extract all links from gs_ggs section using depth counting
+  const fullTextLinks: FullTextLink[] = [];
+  const ggsSection = extractSectionByDepth(html, '"gs_ggs');
   if (ggsSection) {
-    const pdfMatch = ggsSection.match(/href="([^"]*)"/);
-    if (pdfMatch) {
-      pdfUrl = decodeEntities(pdfMatch[1]);
+    fullTextLinks.push(...extractLinksFromHtml(ggsSection));
+  }
+
+  // Also check gs_fl gs_flb footer for institutional links (LibKey, etc.)
+  const footerMatch = html.match(
+    /<div class="gs_fl gs_flb">([\s\S]*?)<\/div>/
+  );
+  if (footerMatch) {
+    const footerLinks = extractLinksFromHtml(footerMatch[1]);
+    for (const link of footerLinks) {
+      if (!isScholarFooterAction(link.label)) {
+        fullTextLinks.push(link);
+      }
     }
   }
+
+  // Backward compat: pdfUrl is the first pdf-type link, or first link overall
+  const firstPdfLink = fullTextLinks.find((l) => l.type === "pdf");
+  const pdfUrl = firstPdfLink
+    ? firstPdfLink.url
+    : fullTextLinks.length > 0
+      ? fullTextLinks[0].url
+      : null;
 
   // Author/Journal metadata from <div class="gs_a">
   const gsAHtml = extractBetween(html, '<div class="gs_a">', "</div>");
@@ -170,6 +271,7 @@ export function parseResultCard(html: string, fallbackPosition: number): Scholar
     snippet,
     url,
     pdfUrl,
+    fullTextLinks,
     citations,
     clusterId,
     position,

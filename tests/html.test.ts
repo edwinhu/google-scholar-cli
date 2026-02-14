@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { parseResultCard, parseResultCards } from "../src/util/html";
+import type { FullTextLink } from "../src/util/html";
 
 // ---------------------------------------------------------------------------
 // Test fixtures -- real-looking Scholar HTML matching actual Labs API output
@@ -143,6 +144,136 @@ const CARD_SINGLE_AUTHOR = `<div class="gs_r gs_or gs_scl"
       <a href="/scholar?cites=22222222222222222222&amp;as_sdt=2005&amp;sciodt=0,5&amp;hl=en">Cited by 5291</a>
       <a href="/scholar?q=related:ZzYyXxWwVvUJ:scholar.google.com/">Related articles</a>
       <a href="/scholar?cluster=ZzYyXxWwVvUJ&amp;hl=en&amp;as_sdt=0,5">All 8 versions</a>
+    </div>
+  </div>
+</div>`;
+
+// Multi-link fixture: PDF + LibKey link in gs_ggs section
+const CARD_MULTI_LINKS = `<div class="gs_r gs_or gs_scl"
+     data-cid="MultiLnk123J"
+     data-did="MultiLnk123J"
+     data-lid=""
+     data-aid="MultiLnk123J"
+     data-rp="1">
+  <div class="gs_ggs gs_fl">
+    <div class="gs_ggsd">
+      <a href="https://papers.ssrn.com/sol3/papers.cfm?abstract_id=3456789">
+        <span class="gs_ctg2">[PDF]</span> ssrn.com
+      </a>
+    </div>
+    <div class="gs_ggsd">
+      <a href="https://libkey.io/libraries/1234/openurl?genre=article&amp;doi=10.1234/example">
+        <span class="gs_ctg2">[PDF]</span> Full Text @ My University
+      </a>
+    </div>
+  </div>
+  <div class="gs_ri">
+    <h3 class="gs_rt">
+      <a id="MultiLnk123J" href="https://scholar.google.com/scholar_url?url=https://example.com/paper&amp;hl=en&amp;sa=T" data-clk="hl=en&amp;sa=T">
+        Multi-Link Paper Title
+      </a>
+    </h3>
+    <div class="gs_a">A Author - Journal of Testing, 2024 - Publisher</div>
+    <div class="gs_rs">
+      <div class="gs_rs_tbs">
+        A paper with multiple full-text links.
+      </div>
+    </div>
+    <div class="gs_fl gs_flb">
+      <a href="/scholar?cites=99999999999999999999&amp;as_sdt=2005&amp;sciodt=0,5&amp;hl=en">Cited by 10</a>
+      <a href="/scholar?q=related:MultiLnk123J:scholar.google.com/">Related articles</a>
+    </div>
+  </div>
+</div>`;
+
+// LibKey-only link (no [PDF] tag)
+const CARD_LIBKEY_ONLY = `<div class="gs_r gs_or gs_scl"
+     data-cid="LibKeyOnlyXJ"
+     data-did="LibKeyOnlyXJ"
+     data-lid=""
+     data-aid="LibKeyOnlyXJ"
+     data-rp="4">
+  <div class="gs_ggs gs_fl">
+    <div class="gs_ggsd">
+      <a href="https://libkey.io/libraries/1234/openurl?genre=article&amp;doi=10.5555/test">
+        Full Text @ My University Library
+      </a>
+    </div>
+  </div>
+  <div class="gs_ri">
+    <h3 class="gs_rt">
+      <a id="LibKeyOnlyXJ" href="https://scholar.google.com/scholar_url?url=https://example.com/article&amp;hl=en&amp;sa=T" data-clk="hl=en&amp;sa=T">
+        Library Access Only Paper
+      </a>
+    </h3>
+    <div class="gs_a">B Researcher - Some Journal, 2023 - SomePublisher</div>
+    <div class="gs_rs">
+      <div class="gs_rs_tbs">
+        A paper accessible only through library proxy.
+      </div>
+    </div>
+    <div class="gs_fl gs_flb">
+      <a href="/scholar?cites=88888888888888888888&amp;as_sdt=2005&amp;sciodt=0,5&amp;hl=en">Cited by 5</a>
+    </div>
+  </div>
+</div>`;
+
+// Card with HTML tag link (not PDF)
+const CARD_HTML_LINK = `<div class="gs_r gs_or gs_scl"
+     data-cid="HtmlTagLnkXJ"
+     data-did="HtmlTagLnkXJ"
+     data-lid=""
+     data-aid="HtmlTagLnkXJ"
+     data-rp="6">
+  <div class="gs_ggs gs_fl">
+    <div class="gs_ggsd">
+      <a href="https://www.sciencedirect.com/science/article/pii/S0000000000000000">
+        <span class="gs_ctg2">[HTML]</span> sciencedirect.com
+      </a>
+    </div>
+  </div>
+  <div class="gs_ri">
+    <h3 class="gs_rt">
+      <a id="HtmlTagLnkXJ" href="https://scholar.google.com/scholar_url?url=https://example.com/html-article&amp;hl=en&amp;sa=T" data-clk="hl=en&amp;sa=T">
+        HTML Link Paper
+      </a>
+    </h3>
+    <div class="gs_a">C Writer - Another Journal, 2022 - AnotherPub</div>
+    <div class="gs_rs">
+      <div class="gs_rs_tbs">
+        A paper with an HTML full-text link.
+      </div>
+    </div>
+    <div class="gs_fl gs_flb">
+      <a href="/scholar?cites=77777777777777777777&amp;as_sdt=2005&amp;sciodt=0,5&amp;hl=en">Cited by 20</a>
+    </div>
+  </div>
+</div>`;
+
+// Card with institutional link in footer (gs_fl gs_flb)
+const CARD_FOOTER_LIBKEY = `<div class="gs_r gs_or gs_scl"
+     data-cid="FooterLnk99J"
+     data-did="FooterLnk99J"
+     data-lid=""
+     data-aid="FooterLnk99J"
+     data-rp="2">
+  <div class="gs_ri">
+    <h3 class="gs_rt">
+      <a id="FooterLnk99J" href="https://scholar.google.com/scholar_url?url=https://example.com/footer-paper&amp;hl=en&amp;sa=T" data-clk="hl=en&amp;sa=T">
+        Footer LibKey Paper
+      </a>
+    </h3>
+    <div class="gs_a">D Scholar - Fancy Journal, 2021 - BigPublisher</div>
+    <div class="gs_rs">
+      <div class="gs_rs_tbs">
+        A paper with an institutional link only in the footer.
+      </div>
+    </div>
+    <div class="gs_fl gs_flb">
+      <a href="/scholar?cites=66666666666666666666&amp;as_sdt=2005&amp;sciodt=0,5&amp;hl=en">Cited by 100</a>
+      <a href="/scholar?q=related:FooterLnk99J:scholar.google.com/">Related articles</a>
+      <a href="https://libkey.io/libraries/5678/openurl?genre=article&amp;doi=10.9999/footer">Full Text @ MyLib</a>
+      <a href="/scholar?cluster=FooterLnk99J&amp;hl=en&amp;as_sdt=0,5">All 3 versions</a>
     </div>
   </div>
 </div>`;
@@ -311,6 +442,112 @@ describe("parseResultCards", () => {
     expect(results[0].position).toBe(9);
     expect(results[0].title).toBe(
       "Disclosure, Liquidity, and the Cost of Capital"
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// fullTextLinks tests
+// ---------------------------------------------------------------------------
+
+describe("parseResultCard fullTextLinks", () => {
+  it("parses multiple gs_ggsd entries into fullTextLinks array", () => {
+    const result = parseResultCard(CARD_MULTI_LINKS, 1);
+
+    expect(result.fullTextLinks).toHaveLength(2);
+
+    expect(result.fullTextLinks[0].url).toBe(
+      "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=3456789"
+    );
+    expect(result.fullTextLinks[0].label).toBe("[PDF] ssrn.com");
+    expect(result.fullTextLinks[0].type).toBe("pdf");
+
+    expect(result.fullTextLinks[1].url).toBe(
+      "https://libkey.io/libraries/1234/openurl?genre=article&doi=10.1234/example"
+    );
+    expect(result.fullTextLinks[1].label).toBe(
+      "[PDF] Full Text @ My University"
+    );
+    expect(result.fullTextLinks[1].type).toBe("pdf");
+  });
+
+  it("maintains backward compat: pdfUrl is first pdf-type link URL", () => {
+    const result = parseResultCard(CARD_MULTI_LINKS, 1);
+
+    expect(result.pdfUrl).toBe(
+      "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=3456789"
+    );
+  });
+
+  it("returns empty fullTextLinks array when no gs_ggs section exists", () => {
+    const result = parseResultCard(CARD_NO_PDF, 3);
+
+    expect(result.fullTextLinks).toEqual([]);
+    expect(result.pdfUrl).toBeNull();
+  });
+
+  it("parses LibKey-only link with no PDF tag as type 'link'", () => {
+    const result = parseResultCard(CARD_LIBKEY_ONLY, 4);
+
+    expect(result.fullTextLinks).toHaveLength(1);
+    expect(result.fullTextLinks[0].url).toBe(
+      "https://libkey.io/libraries/1234/openurl?genre=article&doi=10.5555/test"
+    );
+    expect(result.fullTextLinks[0].label).toBe(
+      "Full Text @ My University Library"
+    );
+    expect(result.fullTextLinks[0].type).toBe("link");
+    // pdfUrl falls back to first link when no pdf-type links exist
+    expect(result.pdfUrl).toBe(
+      "https://libkey.io/libraries/1234/openurl?genre=article&doi=10.5555/test"
+    );
+  });
+
+  it("detects [HTML] tag and sets type to 'html'", () => {
+    const result = parseResultCard(CARD_HTML_LINK, 6);
+
+    expect(result.fullTextLinks).toHaveLength(1);
+    expect(result.fullTextLinks[0].url).toBe(
+      "https://www.sciencedirect.com/science/article/pii/S0000000000000000"
+    );
+    expect(result.fullTextLinks[0].label).toBe("[HTML] sciencedirect.com");
+    expect(result.fullTextLinks[0].type).toBe("html");
+  });
+
+  it("captures institutional links from gs_fl footer", () => {
+    const result = parseResultCard(CARD_FOOTER_LIBKEY, 2);
+
+    // No gs_ggs section, but there is a footer link
+    expect(result.fullTextLinks).toHaveLength(1);
+    expect(result.fullTextLinks[0].url).toBe(
+      "https://libkey.io/libraries/5678/openurl?genre=article&doi=10.9999/footer"
+    );
+    expect(result.fullTextLinks[0].label).toBe("Full Text @ MyLib");
+    expect(result.fullTextLinks[0].type).toBe("link");
+    // pdfUrl falls back to the footer link
+    expect(result.pdfUrl).toBe(
+      "https://libkey.io/libraries/5678/openurl?genre=article&doi=10.9999/footer"
+    );
+  });
+
+  it("returns empty fullTextLinks for empty HTML", () => {
+    const result = parseResultCard("", 0);
+    expect(result.fullTextLinks).toEqual([]);
+  });
+
+  it("existing single-link cards populate fullTextLinks correctly", () => {
+    // The existing FULL_CARD_HTML has one PDF link
+    const result = parseResultCard(FULL_CARD_HTML, 0);
+
+    expect(result.fullTextLinks).toHaveLength(1);
+    expect(result.fullTextLinks[0].url).toBe(
+      "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=3456789"
+    );
+    expect(result.fullTextLinks[0].label).toBe("[PDF] ssrn.com");
+    expect(result.fullTextLinks[0].type).toBe("pdf");
+    // pdfUrl backward compat
+    expect(result.pdfUrl).toBe(
+      "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=3456789"
     );
   });
 });

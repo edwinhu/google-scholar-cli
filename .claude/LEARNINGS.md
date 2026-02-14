@@ -54,3 +54,13 @@ Binary compiled successfully: 60MB standalone binary (bun build --compile).
 - Binary-framed protocol parser handles streaming and one-shot modes
 - HTML parser uses regex extraction (zero deps, handles real Scholar HTML)
 - CDP auth connects to existing Chrome (doesn't launch)
+---
+Last updated: 2026-02-13 19:00
+---
+
+[Compaction at 19:08] (workflow: /dev) - Context was summarized
+---
+Last updated: 2026-02-13 21:31
+---
+
+[Compaction at 21:35] (workflow: /dev) - Context was summarized

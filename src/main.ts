@@ -47,6 +47,9 @@ async function main(): Promise<number> {
     port: typeof flags.port === "string" ? parseInt(flags.port, 10) : undefined,
     interactive: !!flags.interactive,
     help: !!flags.help,
+    bibtex: !!flags.bibtex,
+    download: !!flags.download,
+    output: typeof flags.output === "string" ? flags.output : undefined,
   };
 
   const cmd = args[0];
@@ -70,6 +73,14 @@ async function main(): Promise<number> {
       const { cmdLookup } = await import("./commands/lookup.js");
       return cmdLookup(cmdArgs, globalFlags);
     }
+    case "cite": {
+      const { cmdCite } = await import("./commands/cite.js");
+      return cmdCite(cmdArgs, globalFlags);
+    }
+    case "download": {
+      const { cmdDownload } = await import("./commands/download.js");
+      return cmdDownload(cmdArgs, globalFlags);
+    }
     default:
       printError(`Unknown command: ${cmd}`);
       printUsage();
@@ -86,12 +97,16 @@ Commands:
   auth          Authenticate via Chrome CDP cookie extraction
   search        Search Google Scholar Labs (AI-enhanced)
   lookup        Traditional Google Scholar keyword search
+  cite          Fetch BibTeX citations by cluster ID
+  download      Download a PDF from a URL (LibKey, direct link, etc.)
   help          Show this help
 
 Global Flags:
   --json             Output as JSON
   --port <n>         Chrome CDP port (default: 9222)
   --interactive      Interactive REPL mode for search
+  --bibtex           Fetch BibTeX citations for search/lookup results
+  --download         Download PDFs for results with full-text links
   --help             Show help`);
 }
 

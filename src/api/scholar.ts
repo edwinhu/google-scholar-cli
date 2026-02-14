@@ -1,6 +1,8 @@
 import { API_BASE, SEARCH_PATH } from "../config.js";
 import { createFrameParser } from "../util/parser.js";
-import type { Cookies } from "../auth.js";
+import { extractBibtexUrl } from "../util/bibtex.js";
+import type { Cookies, BrowserCookie } from "../auth.js";
+import { cookiesForUrl } from "../auth.js";
 
 export interface SearchOptions {
   query: string;
@@ -141,4 +143,128 @@ export async function search(opts: SearchOptions): Promise<SearchResponse> {
   }
 
   return { sessionId, messages: allMessages };
+}
+
+/**
+ * Fetch the BibTeX citation for a Scholar result by its cluster ID.
+ *
+ * This is a two-step process:
+ * 1. GET the citation popup HTML from Scholar
+ * 2. Extract the BibTeX URL from the popup and fetch the raw BibTeX string
+ */
+export async function fetchBibtex(
+  clusterId: string,
+  cookies: Cookies,
+): Promise<string> {
+  const headers = {
+    Cookie: cookieHeader(cookies),
+    "User-Agent":
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+  };
+
+  // Step 1: Get the citation popup HTML
+  const citeUrl = `${API_BASE}/scholar?q=info:${encodeURIComponent(clusterId)}:scholar.google.com/&output=cite`;
+  const citeResp = await fetch(citeUrl, { headers });
+
+  if (!citeResp.ok) {
+    throw new Error(
+      `Failed to fetch citation popup for ${clusterId}: ${citeResp.status} ${citeResp.statusText}`,
+    );
+  }
+
+  const citeHtml = await citeResp.text();
+  const bibtexUrl = extractBibtexUrl(citeHtml);
+
+  if (!bibtexUrl) {
+    throw new Error(
+      `Could not find BibTeX link in citation popup for cluster ID ${clusterId}`,
+    );
+  }
+
+  // Step 2: Fetch the actual BibTeX string
+  const bibResp = await fetch(bibtexUrl, { headers });
+
+  if (!bibResp.ok) {
+    throw new Error(
+      `Failed to fetch BibTeX for ${clusterId}: ${bibResp.status} ${bibResp.statusText}`,
+    );
+  }
+
+  return bibResp.text();
+}
+
+/**
+ * Download a PDF from a URL (LibKey, direct PDF, etc.) following redirects.
+ *
+ * When allCookies is provided, manually follows redirects and sends
+ * domain-appropriate cookies at each hop (e.g., libkey.io cookies for
+ * libkey.io, proxy cookies for proxy domains, publisher cookies for
+ * publisher domains).
+ *
+ * Falls back to Google cookies when allCookies is not provided.
+ */
+export async function downloadPdf(
+  url: string,
+  outputPath: string,
+  cookies: Cookies,
+  allCookies?: BrowserCookie[],
+): Promise<void> {
+  let currentUrl = url;
+  const maxRedirects = 10;
+
+  for (let i = 0; i < maxRedirects; i++) {
+    // Build cookie header: use domain-matched browser cookies if available,
+    // fall back to Google cookies
+    let cookieStr: string;
+    if (allCookies && allCookies.length > 0) {
+      cookieStr = cookiesForUrl(allCookies, currentUrl);
+    } else {
+      cookieStr = cookieHeader(cookies);
+    }
+
+    const resp = await fetch(currentUrl, {
+      headers: {
+        Cookie: cookieStr,
+        "User-Agent":
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+      },
+      redirect: "manual", // Don't auto-follow — we handle it
+    });
+
+    // Follow redirects manually
+    if (resp.status >= 300 && resp.status < 400) {
+      const location = resp.headers.get("location");
+      if (!location) {
+        throw new Error(`Redirect ${resp.status} with no Location header`);
+      }
+      // Resolve relative URLs
+      currentUrl = new URL(location, currentUrl).toString();
+      continue;
+    }
+
+    if (!resp.ok) {
+      throw new Error(`Download failed: ${resp.status} ${resp.statusText}`);
+    }
+
+    // Check Content-Type: reject HTML responses (likely a paywall or login page)
+    const contentType = resp.headers.get("content-type") ?? "";
+    if (contentType.split(";")[0].trim().toLowerCase() === "text/html") {
+      // Check if this is a Scholar instlink redirect page (JS-based redirect)
+      const html = await resp.text();
+      const jsRedirect = html.match(/location\.replace\(['"]([^'"]+)['"]\)/);
+      if (jsRedirect) {
+        currentUrl = jsRedirect[1];
+        continue; // Follow the JS redirect
+      }
+      throw new Error(
+        "Server returned HTML instead of PDF (likely a paywall or login page)",
+      );
+    }
+
+    const buffer = await resp.arrayBuffer();
+    await Bun.write(outputPath, buffer);
+    return;
+  }
+
+  throw new Error(`Too many redirects (>${maxRedirects})`);
 }
