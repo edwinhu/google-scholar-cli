@@ -21,7 +21,7 @@ export function extractBibtexUrl(html: string): string | null {
     /<a[^>]*class="gs_citi"[^>]*href="([^"]*)"[^>]*>\s*BibTeX\s*<\/a>/,
   );
 
-  return match ? match[1] : null;
+  return match ? match[1].replace(/&amp;/g, "&") : null;
 }
 
 /**

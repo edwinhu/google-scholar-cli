@@ -24,13 +24,14 @@ function cookieHeader(cookies: Cookies): string {
 
 /**
  * Build a cookie header for Scholar requests.
- * When browser cookies are available, use domain-matched cookies (includes
- * the GSP cookie with library link configuration). Falls back to Google
- * auth cookies when browser cookies are not available.
+ * When browser cookies are available AND match the Scholar domain, use them
+ * (includes the GSP cookie with library link configuration). Falls back to
+ * Google auth cookies when no domain-matched browser cookies exist.
  */
 function scholarCookieHeader(cookies: Cookies, allCookies?: BrowserCookie[]): string {
   if (allCookies && allCookies.length > 0) {
-    return cookiesForUrl(allCookies, API_BASE);
+    const matched = cookiesForUrl(allCookies, API_BASE);
+    if (matched) return matched;
   }
   return cookieHeader(cookies);
 }
@@ -82,7 +83,13 @@ export async function cmdLookup(
     const count = parseResultCount(html);
 
     if (results.length === 0) {
-      printError("No results found.");
+      if (html.includes("gs_captcha")) {
+        printError(
+          "Google Scholar returned a CAPTCHA. Open scholar.google.com in Chrome, solve it, then retry.",
+        );
+      } else {
+        printError("No results found.");
+      }
       return 1;
     }
 

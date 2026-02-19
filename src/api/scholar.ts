@@ -48,6 +48,11 @@ export async function getXsrf(cookies: Cookies): Promise<string> {
   }
 
   const html = await resp.text();
+  if (html.includes("gs_captcha")) {
+    throw new Error(
+      "Google Scholar returned a CAPTCHA. Open scholar.google.com in Chrome, solve it, then retry.",
+    );
+  }
   const match = html.match(/data-dsp="[^"]*xsrf=([^"&]*)"/);
   if (!match) {
     throw new Error("Could not extract XSRF token from page");
@@ -173,6 +178,11 @@ export async function fetchBibtex(
   }
 
   const citeHtml = await citeResp.text();
+  if (citeHtml.includes("gs_captcha")) {
+    throw new Error(
+      "Google Scholar returned a CAPTCHA. Open scholar.google.com in Chrome, solve it, then retry.",
+    );
+  }
   const bibtexUrl = extractBibtexUrl(citeHtml);
 
   if (!bibtexUrl) {
@@ -217,7 +227,8 @@ export async function downloadPdf(
     // fall back to Google cookies
     let cookieStr: string;
     if (allCookies && allCookies.length > 0) {
-      cookieStr = cookiesForUrl(allCookies, currentUrl);
+      const matched = cookiesForUrl(allCookies, currentUrl);
+      cookieStr = matched || cookieHeader(cookies);
     } else {
       cookieStr = cookieHeader(cookies);
     }

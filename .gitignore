@@ -5,3 +5,4 @@ logs/
 *.log
 .DS_Store
 scholar
+.claude/ACTIVE_WORKFLOW.md
