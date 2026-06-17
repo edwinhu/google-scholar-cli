@@ -1,4 +1,4 @@
-import { API_BASE, SEARCH_PATH } from "../config.js";
+import { API_BASE, SEARCH_PATH, USER_AGENT } from "../config.js";
 import { createFrameParser } from "../util/parser.js";
 import { extractBibtexUrl } from "../util/bibtex.js";
 import type { Cookies, BrowserCookie } from "../auth.js";
@@ -36,8 +36,7 @@ export async function getXsrf(cookies: Cookies): Promise<string> {
   const resp = await fetch(url, {
     headers: {
       Cookie: cookieHeader(cookies),
-      "User-Agent":
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+      "User-Agent": USER_AGENT,
     },
   });
 
@@ -77,8 +76,7 @@ export async function search(opts: SearchOptions): Promise<SearchResponse> {
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
       Cookie: cookieHeader(opts.cookies),
-      "User-Agent":
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+      "User-Agent": USER_AGENT,
     },
     body: `q=${encodeURIComponent(opts.query)}`,
   });
@@ -163,8 +161,7 @@ export async function fetchBibtex(
 ): Promise<string> {
   const headers = {
     Cookie: cookieHeader(cookies),
-    "User-Agent":
-      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+    "User-Agent": USER_AGENT,
   };
 
   // Step 1: Get the citation popup HTML
@@ -236,8 +233,7 @@ export async function downloadPdf(
     const resp = await fetch(currentUrl, {
       headers: {
         Cookie: cookieStr,
-        "User-Agent":
-          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+        "User-Agent": USER_AGENT,
       },
       redirect: "manual", // Don't auto-follow — we handle it
     });

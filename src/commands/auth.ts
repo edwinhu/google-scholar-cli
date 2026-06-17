@@ -1,7 +1,7 @@
 import { writeFileSync } from "node:fs";
 import { saveCookies, saveAllCookies } from "../auth.js";
 import type { BrowserCookie } from "../auth.js";
-import { CONFIG_DIR } from "../config.js";
+import { CONFIG_DIR, USER_AGENT } from "../config.js";
 import { printError } from "../output.js";
 
 interface CdpCookie {
@@ -227,8 +227,7 @@ async function extractInstId(
   const cookieStr = scholarCookies ? `${scholarCookies}; ${googleStr}` : googleStr;
   const headers = {
     Cookie: cookieStr,
-    "User-Agent":
-      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+    "User-Agent": USER_AGENT,
   };
 
   try {
