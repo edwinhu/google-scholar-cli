@@ -1,5 +1,7 @@
 import { describe, it, expect } from "bun:test";
 
+const REPO_ROOT = new URL("..", import.meta.url).pathname;
+
 // ============================================================
 // Unit tests for cookiesForUrl
 // ============================================================
@@ -233,7 +235,7 @@ describe("CLI auth regression", () => {
     const proc = Bun.spawn(
       ["bun", "run", "src/main.ts", "--help"],
       {
-        cwd: "/Users/vwh7mb/projects/google-scholar-cli",
+        cwd: REPO_ROOT,
         stdout: "pipe",
         stderr: "pipe",
       },

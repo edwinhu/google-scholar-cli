@@ -1,10 +1,12 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolveCookies, resolveAllCookies, cookiesForUrl } from "../auth.js";
 import { API_BASE, INST_FILE, NAV_HEADERS } from "../config.js";
-import { fetchBibtex, downloadPdf } from "../api/scholar.js";
+import { fetchBibtex, downloadPdf, SERVICE } from "../api/scholar.js";
 import { parseScholarPage, parseResultCount } from "../util/html.js";
 import { injectAbstract } from "../util/bibtex.js";
 import { sanitizeFilename } from "../util/filename.js";
+import { applyLimit } from "../util/limit.js";
+import { blocked, exitCodeFor, cdpPort } from "../cdp.js";
 import { printTable, printJson, printError, printProgress } from "../output.js";
 import type { Cookies, BrowserCookie } from "../auth.js";
 import type { ScholarResult, FullTextLink } from "../util/html.js";
@@ -14,6 +16,7 @@ interface LookupFlags {
   help: boolean;
   bibtex: boolean;
   download: boolean;
+  limit?: number;
 }
 
 function cookieHeader(cookies: Cookies): string {
@@ -79,17 +82,16 @@ export async function cmdLookup(
     const html = await resp.text();
     process.stderr.write("\r\x1b[K");
 
-    const results = parseScholarPage(html);
+    const found = parseScholarPage(html);
     const count = parseResultCount(html);
+    const results = applyLimit(found, flags.limit);
 
-    if (results.length === 0) {
+    if (found.length === 0) {
       if (html.includes("gs_captcha")) {
-        printError(
-          "Google Scholar returned a CAPTCHA. Open scholar.google.com in Chrome, solve it, then retry.",
-        );
-      } else {
-        printError("No results found.");
+        // Same taxonomy as the Labs path: a CAPTCHA is TEMPFAIL, not "no results".
+        throw blocked(SERVICE, cdpPort());
       }
+      printError("No results found.");
       return 1;
     }
 
@@ -140,7 +142,7 @@ export async function cmdLookup(
   } catch (err) {
     process.stderr.write("\r\x1b[K");
     printError(err instanceof Error ? err.message : String(err));
-    return 1;
+    return exitCodeFor(err);
   }
 }
 
@@ -238,6 +240,7 @@ Usage: scholar lookup "query" [options]
 
 Options:
   --json       Output as JSON
+  --limit <n>  Keep only the first n results
   --bibtex     Fetch BibTeX citations for each result (with abstract)
   --download   Download PDFs for results with full-text links
   --help       Show this help
@@ -245,6 +248,7 @@ Options:
 Examples:
   scholar lookup "machine learning transformers"
   scholar lookup "author:hinton deep learning" --json
+  scholar lookup "machine learning transformers" --limit 3
   scholar lookup "attention is all you need" --bibtex
   scholar lookup "attention is all you need" --download`);
 }

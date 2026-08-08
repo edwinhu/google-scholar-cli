@@ -3,6 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { existsSync, unlinkSync } from "node:fs";
 
+const REPO_ROOT = new URL("..", import.meta.url).pathname;
+
 // ============================================================
 // Unit tests for sanitizeFilename
 // ============================================================
@@ -63,8 +65,8 @@ describe("sanitizeFilename", () => {
 // ============================================================
 describe("CLI download", () => {
   it("scholar download --help exits 0 with usage text", async () => {
-    const proc = Bun.spawn(["bun", "run", "src/main.ts", "download", "--help"], {
-      cwd: "/Users/vwh7mb/projects/google-scholar-cli",
+    const proc = Bun.spawn([process.execPath, "run", "src/main.ts", "download", "--help"], {
+      cwd: REPO_ROOT,
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -77,8 +79,8 @@ describe("CLI download", () => {
   });
 
   it("scholar download without args exits 1 with error", async () => {
-    const proc = Bun.spawn(["bun", "run", "src/main.ts", "download"], {
-      cwd: "/Users/vwh7mb/projects/google-scholar-cli",
+    const proc = Bun.spawn([process.execPath, "run", "src/main.ts", "download"], {
+      cwd: REPO_ROOT,
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -99,7 +101,7 @@ describe("CLI --download flag", () => {
     const proc = Bun.spawn(
       ["bun", "run", "src/main.ts", "search", "--help"],
       {
-        cwd: "/Users/vwh7mb/projects/google-scholar-cli",
+        cwd: REPO_ROOT,
         stdout: "pipe",
         stderr: "pipe",
       },
@@ -116,7 +118,7 @@ describe("CLI --download flag", () => {
     const proc = Bun.spawn(
       ["bun", "run", "src/main.ts", "lookup", "--help"],
       {
-        cwd: "/Users/vwh7mb/projects/google-scholar-cli",
+        cwd: REPO_ROOT,
         stdout: "pipe",
         stderr: "pipe",
       },
@@ -130,8 +132,8 @@ describe("CLI --download flag", () => {
   });
 
   it("scholar --help mentions download command", async () => {
-    const proc = Bun.spawn(["bun", "run", "src/main.ts", "--help"], {
-      cwd: "/Users/vwh7mb/projects/google-scholar-cli",
+    const proc = Bun.spawn([process.execPath, "run", "src/main.ts", "--help"], {
+      cwd: REPO_ROOT,
       stdout: "pipe",
       stderr: "pipe",
     });

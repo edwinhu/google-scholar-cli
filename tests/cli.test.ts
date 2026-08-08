@@ -1,9 +1,11 @@
 import { describe, it, expect } from "bun:test";
 
+const REPO_ROOT = new URL("..", import.meta.url).pathname;
+
 describe("CLI", () => {
   it("scholar --help exits 0 with usage text", async () => {
-    const proc = Bun.spawn(["bun", "run", "src/main.ts", "--help"], {
-      cwd: "/Users/vwh7mb/projects/google-scholar-cli",
+    const proc = Bun.spawn([process.execPath, "run", "src/main.ts", "--help"], {
+      cwd: REPO_ROOT,
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -18,8 +20,8 @@ describe("CLI", () => {
   });
 
   it("scholar help exits 0", async () => {
-    const proc = Bun.spawn(["bun", "run", "src/main.ts", "help"], {
-      cwd: "/Users/vwh7mb/projects/google-scholar-cli",
+    const proc = Bun.spawn([process.execPath, "run", "src/main.ts", "help"], {
+      cwd: REPO_ROOT,
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -29,8 +31,8 @@ describe("CLI", () => {
   });
 
   it("scholar unknown-cmd exits 1 with error", async () => {
-    const proc = Bun.spawn(["bun", "run", "src/main.ts", "unknown-cmd"], {
-      cwd: "/Users/vwh7mb/projects/google-scholar-cli",
+    const proc = Bun.spawn([process.execPath, "run", "src/main.ts", "unknown-cmd"], {
+      cwd: REPO_ROOT,
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -43,8 +45,8 @@ describe("CLI", () => {
   });
 
   it("scholar search without query exits 1 with error", async () => {
-    const proc = Bun.spawn(["bun", "run", "src/main.ts", "search"], {
-      cwd: "/Users/vwh7mb/projects/google-scholar-cli",
+    const proc = Bun.spawn([process.execPath, "run", "src/main.ts", "search"], {
+      cwd: REPO_ROOT,
       stdout: "pipe",
       stderr: "pipe",
     });

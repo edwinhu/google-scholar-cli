@@ -1,11 +1,13 @@
 import { describe, it, expect } from "bun:test";
 import { parseResultCards as parseLabsCards } from "../src/util/html.js";
 
+const REPO_ROOT = new URL("..", import.meta.url).pathname;
+
 // Test that CLI integration works for the lookup command
 describe("CLI lookup", () => {
   it("scholar lookup --help exits 0", async () => {
-    const proc = Bun.spawn(["bun", "run", "src/main.ts", "lookup", "--help"], {
-      cwd: "/Users/vwh7mb/projects/google-scholar-cli",
+    const proc = Bun.spawn([process.execPath, "run", "src/main.ts", "lookup", "--help"], {
+      cwd: REPO_ROOT,
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -18,8 +20,8 @@ describe("CLI lookup", () => {
   });
 
   it("scholar lookup without query exits 1", async () => {
-    const proc = Bun.spawn(["bun", "run", "src/main.ts", "lookup"], {
-      cwd: "/Users/vwh7mb/projects/google-scholar-cli",
+    const proc = Bun.spawn([process.execPath, "run", "src/main.ts", "lookup"], {
+      cwd: REPO_ROOT,
       stdout: "pipe",
       stderr: "pipe",
     });

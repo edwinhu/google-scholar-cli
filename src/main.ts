@@ -1,4 +1,5 @@
 import { printError } from "./output.js";
+import { DEFAULT_CDP_PORT, exitCodeFor } from "./cdp.js";
 
 // Parse global flags from argv
 export function parseFlags(argv: string[]): {
@@ -36,10 +37,31 @@ export function parseFlags(argv: string[]): {
   return { args, flags };
 }
 
+/**
+ * Parse --limit into a positive integer. Returns undefined when the flag is
+ * absent, and null when it is present but not a positive integer (the caller
+ * reports that as an error rather than silently ignoring it).
+ */
+export function parseLimit(
+  raw: string | boolean | undefined,
+): number | undefined | null {
+  if (raw === undefined) return undefined;
+  if (typeof raw !== "string") return null; // bare --limit with no value
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 1) return null;
+  return n;
+}
+
 async function main(): Promise<number> {
   // Skip bun and script path
   const rawArgs = Bun.argv.slice(2);
   const { args, flags } = parseFlags(rawArgs);
+
+  const limit = parseLimit(flags.limit);
+  if (limit === null) {
+    printError("--limit requires a positive integer (e.g. --limit 5)");
+    return 1;
+  }
 
   // Global flags
   const globalFlags = {
@@ -50,6 +72,7 @@ async function main(): Promise<number> {
     bibtex: !!flags.bibtex,
     download: !!flags.download,
     output: typeof flags.output === "string" ? flags.output : undefined,
+    limit,
   };
 
   const cmd = args[0];
@@ -103,7 +126,8 @@ Commands:
 
 Global Flags:
   --json             Output as JSON
-  --port <n>         Chrome CDP port (default: 9222)
+  --limit <n>        Keep only the first n results (search/lookup)
+  --port <n>         Chrome CDP port (default: ${DEFAULT_CDP_PORT}, or $SCHOLAR_CDP_PORT / $CDP_PORT)
   --interactive      Interactive REPL mode for search
   --bibtex           Fetch BibTeX citations for search/lookup results
   --download         Download PDFs for results with full-text links
@@ -111,5 +135,11 @@ Global Flags:
 }
 
 if (import.meta.main) {
-  main().then((code) => process.exit(code));
+  main()
+    .catch((err) => {
+      // Anything a command didn't handle: AuthError keeps its sysexits code.
+      printError(err instanceof Error ? err.message : String(err));
+      return exitCodeFor(err);
+    })
+    .then((code) => process.exit(code));
 }

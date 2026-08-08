@@ -1,5 +1,7 @@
 import { describe, it, expect } from "bun:test";
 
+const REPO_ROOT = new URL("..", import.meta.url).pathname;
+
 describe("extractBibtexUrl", () => {
   it("extracts the BibTeX URL from a Scholar citation popup HTML", async () => {
     const { extractBibtexUrl } = await import("../src/util/bibtex.js");
@@ -137,7 +139,7 @@ describe("CLI --bibtex flag", () => {
     const proc = Bun.spawn(
       ["bun", "run", "src/main.ts", "search", "--bibtex", "--help"],
       {
-        cwd: "/Users/vwh7mb/projects/google-scholar-cli",
+        cwd: REPO_ROOT,
         stdout: "pipe",
         stderr: "pipe",
       },
@@ -154,7 +156,7 @@ describe("CLI --bibtex flag", () => {
     const proc = Bun.spawn(
       ["bun", "run", "src/main.ts", "lookup", "--bibtex", "--help"],
       {
-        cwd: "/Users/vwh7mb/projects/google-scholar-cli",
+        cwd: REPO_ROOT,
         stdout: "pipe",
         stderr: "pipe",
       },
@@ -171,7 +173,7 @@ describe("CLI --bibtex flag", () => {
     const proc = Bun.spawn(
       ["bun", "run", "src/main.ts", "--help"],
       {
-        cwd: "/Users/vwh7mb/projects/google-scholar-cli",
+        cwd: REPO_ROOT,
         stdout: "pipe",
         stderr: "pipe",
       },
@@ -187,8 +189,8 @@ describe("CLI --bibtex flag", () => {
 
 describe("CLI cite", () => {
   it("scholar cite --help exits 0 with usage text", async () => {
-    const proc = Bun.spawn(["bun", "run", "src/main.ts", "cite", "--help"], {
-      cwd: "/Users/vwh7mb/projects/google-scholar-cli",
+    const proc = Bun.spawn([process.execPath, "run", "src/main.ts", "cite", "--help"], {
+      cwd: REPO_ROOT,
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -202,8 +204,8 @@ describe("CLI cite", () => {
   });
 
   it("scholar cite without arguments exits 1 with error", async () => {
-    const proc = Bun.spawn(["bun", "run", "src/main.ts", "cite"], {
-      cwd: "/Users/vwh7mb/projects/google-scholar-cli",
+    const proc = Bun.spawn([process.execPath, "run", "src/main.ts", "cite"], {
+      cwd: REPO_ROOT,
       stdout: "pipe",
       stderr: "pipe",
     });

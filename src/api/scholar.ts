@@ -1,4 +1,5 @@
 import { API_BASE, SEARCH_PATH, USER_AGENT } from "../config.js";
+import { cdpPort, notSignedIn, blocked } from "../cdp.js";
 import { createFrameParser } from "../util/parser.js";
 import { extractBibtexUrl } from "../util/bibtex.js";
 import type { Cookies, BrowserCookie } from "../auth.js";
@@ -27,6 +28,36 @@ function cookieHeader(cookies: Cookies): string {
     .join("; ");
 }
 
+export const SERVICE = "Google Scholar";
+
+/**
+ * Signals that the Labs page loaded but carried no XSRF token. Distinct from
+ * AuthError on purpose: this is a code bug (Scholar's layout changed), not an
+ * auth problem, so it must never be reported as NOPERM. It is self-healable
+ * once, since a partly-valid session produces the same symptom.
+ */
+export class MissingTokenError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "MissingTokenError";
+  }
+}
+
+/**
+ * Whether a response landed on Google's sign-in flow. Scholar Labs (unlike
+ * /scholar) requires a signed-in session and 302s to accounts.google.com when
+ * the cookies are expired or absent. Detected by the post-redirect host only:
+ * a genuine Scholar page also contains ServiceLogin links, so HTML markers
+ * would produce false positives.
+ */
+export function isSignInRedirect(finalUrl: string): boolean {
+  try {
+    return new URL(finalUrl).hostname === "accounts.google.com";
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Fetch the XSRF token from the Scholar Labs search page.
  * Extracts data-dsp attribute from #gs_as_glb element.
@@ -40,6 +71,10 @@ export async function getXsrf(cookies: Cookies): Promise<string> {
     },
   });
 
+  if (isSignInRedirect(resp.url)) {
+    throw notSignedIn(SERVICE, cdpPort());
+  }
+
   if (!resp.ok) {
     throw new Error(
       `Failed to fetch XSRF token: ${resp.status} ${resp.statusText}`,
@@ -48,13 +83,15 @@ export async function getXsrf(cookies: Cookies): Promise<string> {
 
   const html = await resp.text();
   if (html.includes("gs_captcha")) {
-    throw new Error(
-      "Google Scholar returned a CAPTCHA. Open scholar.google.com in Chrome, solve it, then retry.",
-    );
+    throw blocked(SERVICE, cdpPort());
   }
   const match = html.match(/data-dsp="[^"]*xsrf=([^"&]*)"/);
   if (!match) {
-    throw new Error("Could not extract XSRF token from page");
+    throw new MissingTokenError(
+      "Scholar Labs page loaded but contained no XSRF token. Most likely the " +
+        `session is stale — re-authenticate with 'scholar auth --port ${cdpPort()}' and retry. ` +
+        "If that doesn't help, Scholar's page layout has changed and the token scrape needs updating.",
+    );
   }
 
   return match[1];

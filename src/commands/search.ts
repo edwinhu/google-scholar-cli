@@ -1,10 +1,13 @@
 import { existsSync } from "node:fs";
-import { resolveCookies, resolveAllCookies } from "../auth.js";
+import { resolveAllCookies } from "../auth.js";
 import type { Cookies, BrowserCookie } from "../auth.js";
-import { getXsrf, search, fetchBibtex, downloadPdf } from "../api/scholar.js";
+import { search, fetchBibtex, downloadPdf } from "../api/scholar.js";
+import { openSession } from "../session.js";
+import { exitCodeFor } from "../cdp.js";
 import { parseResultCard } from "../util/html.js";
 import { injectAbstract } from "../util/bibtex.js";
 import { sanitizeFilename } from "../util/filename.js";
+import { applyLimit } from "../util/limit.js";
 import { printTable, printJson, printError, printProgress } from "../output.js";
 import type { ScholarResult, FullTextLink } from "../util/html.js";
 
@@ -14,6 +17,7 @@ interface SearchFlags {
   help: boolean;
   bibtex: boolean;
   download: boolean;
+  limit?: number;
 }
 
 export async function cmdSearch(
@@ -41,10 +45,9 @@ export async function cmdSearch(
 
 async function oneShot(query: string, flags: SearchFlags): Promise<number> {
   try {
-    const cookies = resolveCookies();
-    const xsrf = await getXsrf(cookies);
+    const { cookies, xsrf } = await openSession();
 
-    const results: ScholarResult[] = [];
+    const found: ScholarResult[] = [];
 
     await search({
       query,
@@ -54,20 +57,21 @@ async function oneShot(query: string, flags: SearchFlags): Promise<number> {
         printProgress(status);
       },
       onResult: (html, position) => {
-        results.push(parseResultCard(html, position));
+        found.push(parseResultCard(html, position));
       },
     });
 
     // Clear progress line
     process.stderr.write("\r\x1b[K");
 
-    if (results.length === 0) {
+    if (found.length === 0) {
       printError("No results found.");
       return 1;
     }
 
-    // Sort by position
-    results.sort((a, b) => a.position - b.position);
+    // Sort by position, then apply --limit
+    found.sort((a, b) => a.position - b.position);
+    const results = applyLimit(found, flags.limit);
 
     if (flags.bibtex) {
       return bibtexOutput(results, cookies, flags);
@@ -113,7 +117,7 @@ async function oneShot(query: string, flags: SearchFlags): Promise<number> {
   } catch (err) {
     process.stderr.write("\r\x1b[K");
     printError(err instanceof Error ? err.message : String(err));
-    return 1;
+    return exitCodeFor(err);
   }
 }
 
@@ -152,8 +156,7 @@ async function bibtexOutput(
 
 async function interactiveSearch(flags: SearchFlags): Promise<number> {
   try {
-    const cookies = resolveCookies();
-    const xsrf = await getXsrf(cookies);
+    const { cookies, xsrf } = await openSession();
     let sessionId: string | undefined;
 
     const readline = await import("node:readline");
@@ -185,7 +188,7 @@ async function interactiveSearch(flags: SearchFlags): Promise<number> {
         return 0;
       }
 
-      const results: ScholarResult[] = [];
+      const found: ScholarResult[] = [];
 
       const response = await search({
         query: input,
@@ -196,19 +199,20 @@ async function interactiveSearch(flags: SearchFlags): Promise<number> {
           printProgress(status);
         },
         onResult: (html, position) => {
-          results.push(parseResultCard(html, position));
+          found.push(parseResultCard(html, position));
         },
       });
 
       sessionId = response.sessionId;
       process.stderr.write("\r\x1b[K");
 
-      if (results.length === 0) {
+      if (found.length === 0) {
         console.error("No results found.\n");
         continue;
       }
 
-      results.sort((a, b) => a.position - b.position);
+      found.sort((a, b) => a.position - b.position);
+      const results = applyLimit(found, flags.limit);
 
       if (flags.json) {
         printJson(results);
@@ -228,7 +232,7 @@ async function interactiveSearch(flags: SearchFlags): Promise<number> {
   } catch (err) {
     process.stderr.write("\r\x1b[K");
     printError(err instanceof Error ? err.message : String(err));
-    return 1;
+    return exitCodeFor(err);
   }
 }
 
@@ -292,6 +296,7 @@ Usage: scholar search "question" [options]
 
 Options:
   --json          Output as JSON
+  --limit <n>     Keep only the first n results
   --bibtex        Fetch BibTeX citations for each result (with abstract)
   --download      Download PDFs for results with full-text links
   --interactive   Interactive REPL mode with follow-up questions
@@ -300,6 +305,7 @@ Options:
 Examples:
   scholar search "what are the key papers on attention mechanisms"
   scholar search "compare BERT and GPT architectures" --json
+  scholar search "index fund ownership" --limit 3
   scholar search "attention is all you need" --bibtex
   scholar search "attention is all you need" --download
   scholar search --interactive`);

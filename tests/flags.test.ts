@@ -1,5 +1,6 @@
-import { describe, it, expect } from "bun:test";
-import { parseFlags } from "../src/main.js";
+import { describe, it, expect, afterEach } from "bun:test";
+import { parseFlags, parseLimit } from "../src/main.js";
+import { cdpPort, DEFAULT_CDP_PORT } from "../src/cdp.js";
 
 describe("parseFlags", () => {
   it("parses --json as boolean flag", () => {
@@ -8,10 +9,16 @@ describe("parseFlags", () => {
     expect(result.args).toEqual([]);
   });
 
-  it("parses --port 9222 as string value flag", () => {
-    const result = parseFlags(["--port", "9222"]);
-    expect(result.flags.port).toBe("9222");
+  it("parses --port 9250 as string value flag", () => {
+    const result = parseFlags(["--port", "9250"]);
+    expect(result.flags.port).toBe("9250");
     expect(result.args).toEqual([]);
+  });
+
+  it("parses --limit as a string value flag", () => {
+    const result = parseFlags(["search", "q", "--limit", "2"]);
+    expect(result.flags.limit).toBe("2");
+    expect(result.args).toEqual(["search", "q"]);
   });
 
   it("parses positional args correctly", () => {
@@ -58,8 +65,8 @@ describe("parseFlags", () => {
   });
 
   it("handles flag with value followed by boolean flag", () => {
-    const result = parseFlags(["--port", "9222", "--json"]);
-    expect(result.flags.port).toBe("9222");
+    const result = parseFlags(["--port", "9250", "--json"]);
+    expect(result.flags.port).toBe("9250");
     expect(result.flags.json).toBe(true);
     expect(result.args).toEqual([]);
   });
@@ -88,5 +95,104 @@ describe("output exports", () => {
     expect(typeof output.printJson).toBe("function");
     expect(typeof output.printTable).toBe("function");
     expect(typeof output.printError).toBe("function");
+  });
+});
+
+describe("parseLimit", () => {
+  it("returns undefined when the flag is absent", () => {
+    expect(parseLimit(undefined)).toBeUndefined();
+  });
+
+  it("parses a positive integer", () => {
+    expect(parseLimit("2")).toBe(2);
+    expect(parseLimit("10")).toBe(10);
+  });
+
+  it("rejects a bare --limit with no value", () => {
+    expect(parseLimit(true)).toBeNull();
+  });
+
+  it("rejects zero, negatives, fractions and garbage", () => {
+    expect(parseLimit("0")).toBeNull();
+    expect(parseLimit("-1")).toBeNull();
+    expect(parseLimit("2.5")).toBeNull();
+    expect(parseLimit("abc")).toBeNull();
+    expect(parseLimit("")).toBeNull();
+  });
+});
+
+describe("cdpPort", () => {
+  const savedTool = process.env.SCHOLAR_CDP_PORT;
+  const savedShared = process.env.CDP_PORT;
+  const restore = (name: string, value: string | undefined) => {
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+  };
+  afterEach(() => {
+    restore("SCHOLAR_CDP_PORT", savedTool);
+    restore("CDP_PORT", savedShared);
+  });
+
+  it("defaults to 9250 (the dedicated automation profile)", () => {
+    delete process.env.SCHOLAR_CDP_PORT;
+    delete process.env.CDP_PORT;
+    expect(DEFAULT_CDP_PORT).toBe(9250);
+    expect(cdpPort()).toBe(9250);
+  });
+
+  it("uses SCHOLAR_CDP_PORT when no flag is given", () => {
+    delete process.env.CDP_PORT;
+    process.env.SCHOLAR_CDP_PORT = "9333";
+    expect(cdpPort()).toBe(9333);
+  });
+
+  it("falls back to the shared CDP_PORT when SCHOLAR_CDP_PORT is unset", () => {
+    delete process.env.SCHOLAR_CDP_PORT;
+    process.env.CDP_PORT = "9260";
+    expect(cdpPort()).toBe(9260);
+  });
+
+  it("lets SCHOLAR_CDP_PORT win over CDP_PORT", () => {
+    process.env.SCHOLAR_CDP_PORT = "9333";
+    process.env.CDP_PORT = "9260";
+    expect(cdpPort()).toBe(9333);
+  });
+
+  it("honours the full chain: flag > SCHOLAR_CDP_PORT > CDP_PORT > default", () => {
+    process.env.SCHOLAR_CDP_PORT = "9333";
+    process.env.CDP_PORT = "9260";
+    expect(cdpPort(9444)).toBe(9444);
+    delete process.env.SCHOLAR_CDP_PORT;
+    expect(cdpPort()).toBe(9260);
+    delete process.env.CDP_PORT;
+    expect(cdpPort()).toBe(DEFAULT_CDP_PORT);
+  });
+
+  it("falls past a garbage SCHOLAR_CDP_PORT to CDP_PORT", () => {
+    process.env.SCHOLAR_CDP_PORT = "abc";
+    process.env.CDP_PORT = "9260";
+    expect(cdpPort()).toBe(9260);
+  });
+
+  it("gives the --port flag precedence over the env vars", () => {
+    process.env.SCHOLAR_CDP_PORT = "9333";
+    process.env.CDP_PORT = "9260";
+    expect(cdpPort(9444)).toBe(9444);
+  });
+
+  it("falls back past a garbage or out-of-range env var", () => {
+    delete process.env.CDP_PORT;
+    for (const bad of ["abc", "", "0", "-5", "70000"]) {
+      process.env.SCHOLAR_CDP_PORT = bad;
+      expect(cdpPort()).toBe(DEFAULT_CDP_PORT);
+    }
+  });
+
+  it("falls back past an invalid flag port (e.g. --port abc -> NaN)", () => {
+    delete process.env.SCHOLAR_CDP_PORT;
+    delete process.env.CDP_PORT;
+    expect(cdpPort(NaN)).toBe(DEFAULT_CDP_PORT);
+    expect(cdpPort(0)).toBe(DEFAULT_CDP_PORT);
+    expect(cdpPort(70000)).toBe(DEFAULT_CDP_PORT);
   });
 });

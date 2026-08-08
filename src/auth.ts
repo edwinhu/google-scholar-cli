@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync, renameSync, unlinkSync } from "node:fs";
 import { COOKIES_FILE, BROWSER_COOKIES_FILE, CONFIG_DIR } from "./config.js";
 
 export interface Cookies {
@@ -53,23 +53,38 @@ export function resolveCookies(flagCookies?: string): Cookies {
 }
 
 /**
+ * Write a snapshot file atomically: a reader either sees the whole old file or
+ * the whole new one. Two concurrent `search` runs can now self-heal at once,
+ * and a torn write would leave a corrupt cookie file behind.
+ */
+export function writeFileAtomic(path: string, data: string): void {
+  mkdirSync(CONFIG_DIR, { recursive: true });
+  const tmp = `${path}.${process.pid}.tmp`;
+  try {
+    writeFileSync(tmp, data, { mode: 0o600 });
+    renameSync(tmp, path);
+  } catch (err) {
+    try {
+      unlinkSync(tmp);
+    } catch {
+      // tmp file may not exist; nothing to clean up
+    }
+    throw err;
+  }
+}
+
+/**
  * Save cookies to dotfile with 0600 permissions.
  */
 export function saveCookies(cookies: Cookies): void {
-  mkdirSync(CONFIG_DIR, { recursive: true });
-  writeFileSync(COOKIES_FILE, JSON.stringify(cookies, null, 2), {
-    mode: 0o600,
-  });
+  writeFileAtomic(COOKIES_FILE, JSON.stringify(cookies, null, 2));
 }
 
 /**
  * Save all browser cookies (from all domains) to browser-cookies file.
  */
 export function saveAllCookies(cookies: BrowserCookie[]): void {
-  mkdirSync(CONFIG_DIR, { recursive: true });
-  writeFileSync(BROWSER_COOKIES_FILE, JSON.stringify(cookies, null, 2), {
-    mode: 0o600,
-  });
+  writeFileAtomic(BROWSER_COOKIES_FILE, JSON.stringify(cookies, null, 2));
 }
 
 /**
