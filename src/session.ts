@@ -12,6 +12,7 @@ import {
   extractCookies,
 } from "./cdp.js";
 import { getXsrf, MissingTokenError } from "./api/scholar.js";
+import { saveIdentity } from "./identity.js";
 
 export interface Session {
   cookies: Cookies;
@@ -63,6 +64,8 @@ export async function openSession(retried = false): Promise<Session> {
 
     saveCookies(refreshed.googleCookies);
     saveAllCookies(refreshed.allBrowserCookies);
+    // A stale UA is as much a bot signature as a stale cookie — refresh both.
+    saveIdentity(refreshed.identity);
     process.stderr.write(
       `session was stale; refreshed cookies from Chrome on :${port}\n`,
     );

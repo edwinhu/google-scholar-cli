@@ -1,6 +1,7 @@
 import { saveCookies, saveAllCookies, writeFileAtomic } from "../auth.js";
 import type { BrowserCookie } from "../auth.js";
-import { INST_FILE, USER_AGENT } from "../config.js";
+import { INST_FILE } from "../config.js";
+import { saveIdentity, userAgent } from "../identity.js";
 import { cdpPort, extractCookies, exitCodeFor } from "../cdp.js";
 import { printError } from "../output.js";
 
@@ -15,16 +16,21 @@ export async function cmdAuth(
   const port = cdpPort(flags.port);
 
   try {
-    const { googleCookies, allBrowserCookies } = await extractCookies(port);
+    const { googleCookies, allBrowserCookies, identity } =
+      await extractCookies(port);
 
     saveCookies(googleCookies);
     saveAllCookies(allBrowserCookies);
+    // Save before extractInstId: that request should already use this browser's UA.
+    saveIdentity(identity);
 
     console.log(`Saved ${Object.keys(googleCookies).length} Google cookies.`);
     console.log("Cookie names: " + Object.keys(googleCookies).join(", "));
     console.log(
       `Saved ${allBrowserCookies.length} scholarly domain cookies (publishers, proxies, .edu).`,
     );
+    console.log(`Saved browser identity: ${identity.platform}, ${identity.brands}`);
+    console.log(`  User-Agent: ${identity.userAgent}`);
 
     // Extract and save institutional library ID
     const instId = await extractInstId(googleCookies, allBrowserCookies);
@@ -65,7 +71,7 @@ async function extractInstId(
   const cookieStr = scholarCookies ? `${scholarCookies}; ${googleStr}` : googleStr;
   const headers = {
     Cookie: cookieStr,
-    "User-Agent": USER_AGENT,
+    "User-Agent": userAgent(),
   };
 
   try {

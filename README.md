@@ -126,7 +126,8 @@ retries a single time. CAPTCHAs and 5xx are never retried automatically.
 
 ## How it works
 
-- **Auth**: Connects to Chrome via CDP WebSocket, extracts all cookies (Google auth + scholarly domains), saves to `~/.google-scholar/` via atomic tmp-file + rename, so concurrent runs can't tear the snapshot. Port precedence: `--port` > `$SCHOLAR_CDP_PORT` > `$CDP_PORT` > 9250
+- **Auth**: Connects to Chrome via CDP WebSocket, extracts all cookies (Google auth + scholarly domains) **and that browser's own User-Agent / client hints**, saving both to `~/.google-scholar/` via atomic tmp-file + rename so concurrent runs can't tear the snapshot. Port precedence: `--port` > `$SCHOLAR_CDP_PORT` > `$CDP_PORT` > 9250
+- **Browser identity**: request headers are derived from `~/.google-scholar/ua`, captured from the same Chrome the cookies came from — so the UA, `sec-ch-ua` and `sec-ch-ua-platform` always describe the real browser instead of a hardcoded constant that is wrong on the other platform and rots on every Chrome release. Written by `scholar auth` and refreshed by the self-heal path. Installs with no `ua` file yet fall back to the values that shipped previously
 - **Search**: Fetches XSRF token from Scholar Labs page, POSTs query, parses binary-framed streaming response (4-byte BE uint32 length + JSON payload)
 - **Lookup**: Standard GET to `/scholar?q=...`, parses full result page HTML
 - **Download**: Follows HTTP redirects manually with domain-appropriate cookies. Handles Scholar instlink JS redirects for institutional access. Validates Content-Type to reject HTML paywall pages.

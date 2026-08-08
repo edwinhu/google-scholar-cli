@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolveCookies, resolveAllCookies, cookiesForUrl } from "../auth.js";
-import { API_BASE, INST_FILE, NAV_HEADERS } from "../config.js";
+import { API_BASE, INST_FILE } from "../config.js";
+import { navHeaders } from "../identity.js";
 import { fetchBibtex, downloadPdf, SERVICE } from "../api/scholar.js";
 import { parseScholarPage, parseResultCount } from "../util/html.js";
 import { injectAbstract } from "../util/bibtex.js";
@@ -69,7 +70,7 @@ export async function cmdLookup(
       headers: {
         Cookie: scholarCookieHeader(cookies, allCookies),
         Referer: `${API_BASE}/`,
-        ...NAV_HEADERS,
+        ...navHeaders(),
       },
     });
 

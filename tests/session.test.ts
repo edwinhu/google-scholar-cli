@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, mock } from "bun:test";
 import * as realAuth from "../src/auth.js";
 import * as realCdp from "../src/cdp.js";
+import * as realIdentity from "../src/identity.js";
 import { AuthError, EXIT } from "../src/cdp.js";
 import { MissingTokenError } from "../src/api/scholar.js";
 
@@ -10,6 +11,7 @@ let extracted = 0;
 let reachable = true;
 let extractThrows: Error | null = null;
 let cookieState = "stale";
+let identitySaved = 0;
 
 // Never write to the real ~/.google-scholar during tests.
 mock.module("../src/auth.js", () => ({
@@ -29,7 +31,23 @@ mock.module("../src/cdp.js", () => ({
   extractCookies: async () => {
     extracted++;
     if (extractThrows) throw extractThrows;
-    return { googleCookies: { SID: "fresh" }, allBrowserCookies: [] };
+    return {
+      googleCookies: { SID: "fresh" },
+      allBrowserCookies: [],
+      identity: {
+        userAgent: "UA/1.0",
+        platform: "Linux",
+        brands: '"Chromium";v="150"',
+      },
+    };
+  },
+}));
+
+// Never write to the real ~/.google-scholar/ua either.
+mock.module("../src/identity.js", () => ({
+  ...realIdentity,
+  saveIdentity: () => {
+    identitySaved++;
   },
 }));
 
@@ -63,6 +81,7 @@ beforeEach(() => {
   reachable = true;
   extractThrows = null;
   cookieState = "stale";
+  identitySaved = 0;
   stderrLines = [];
   delete process.env.GOOGLE_SCHOLAR_COOKIES;
   process.stderr.write = ((chunk: string) => {
@@ -89,6 +108,7 @@ describe("openSession self-heal", () => {
     expect(session.xsrf).toBe(TOKEN);
     expect(extracted).toBe(1);
     expect(saved).toBe(1);
+    expect(identitySaved).toBe(1); // UA refreshed in the same step
     expect(fetchCalls).toBe(2);
   });
 

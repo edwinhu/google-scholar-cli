@@ -1,4 +1,5 @@
-import { API_BASE, SEARCH_PATH, USER_AGENT } from "../config.js";
+import { API_BASE, SEARCH_PATH } from "../config.js";
+import { userAgent } from "../identity.js";
 import { cdpPort, notSignedIn, blocked } from "../cdp.js";
 import { createFrameParser } from "../util/parser.js";
 import { extractBibtexUrl } from "../util/bibtex.js";
@@ -67,7 +68,7 @@ export async function getXsrf(cookies: Cookies): Promise<string> {
   const resp = await fetch(url, {
     headers: {
       Cookie: cookieHeader(cookies),
-      "User-Agent": USER_AGENT,
+      "User-Agent": userAgent(),
     },
   });
 
@@ -113,7 +114,7 @@ export async function search(opts: SearchOptions): Promise<SearchResponse> {
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
       Cookie: cookieHeader(opts.cookies),
-      "User-Agent": USER_AGENT,
+      "User-Agent": userAgent(),
     },
     body: `q=${encodeURIComponent(opts.query)}`,
   });
@@ -198,7 +199,7 @@ export async function fetchBibtex(
 ): Promise<string> {
   const headers = {
     Cookie: cookieHeader(cookies),
-    "User-Agent": USER_AGENT,
+    "User-Agent": userAgent(),
   };
 
   // Step 1: Get the citation popup HTML
@@ -270,7 +271,7 @@ export async function downloadPdf(
     const resp = await fetch(currentUrl, {
       headers: {
         Cookie: cookieStr,
-        "User-Agent": USER_AGENT,
+        "User-Agent": userAgent(),
       },
       redirect: "manual", // Don't auto-follow — we handle it
     });

@@ -11,6 +11,12 @@
  */
 
 import type { BrowserCookie } from "./auth.js";
+import {
+  deriveIdentity,
+  FALLBACK_IDENTITY,
+  type BrowserIdentity,
+  type UaData,
+} from "./identity.js";
 
 // The default targets the dedicated automation profile
 // (--user-data-dir=~/.config/chrome-cdp); port 9222 is a Chrome running on the
@@ -103,6 +109,8 @@ interface CdpCookie {
 export interface ExtractedCookies {
   googleCookies: Record<string, string>;
   allBrowserCookies: BrowserCookie[];
+  /** Captured from the same browser, in the same call as the cookies. */
+  identity: BrowserIdentity;
 }
 
 const SCHOLARLY_DOMAINS = [
@@ -178,7 +186,23 @@ export async function extractCookies(port: number): Promise<ExtractedCookies> {
 
   const ws = new WebSocket(googlePage.webSocketDebuggerUrl);
 
-  const cdpCookies = await new Promise<CdpCookie[]>((resolve, reject) => {
+  // Cookies (id 1) and the browser's own UA client hints (id 2) come from the
+  // same socket on the same browser, so they can never describe different ones.
+  const { cdpCookies, uaData } = await new Promise<{
+    cdpCookies: CdpCookie[];
+    uaData: UaData | undefined;
+  }>((resolve, reject) => {
+    let cookies: CdpCookie[] | null = null;
+    let hints: UaData | undefined;
+    let hintsDone = false;
+
+    const settle = () => {
+      if (!cookies || !hintsDone) return;
+      clearTimeout(timeout);
+      ws.close();
+      resolve({ cdpCookies: cookies, uaData: hints });
+    };
+
     const timeout = setTimeout(() => {
       ws.close();
       reject(new AuthError(`CDP timeout after 10s on port ${port}`, EXIT.UNAVAILABLE));
@@ -186,18 +210,45 @@ export async function extractCookies(port: number): Promise<ExtractedCookies> {
 
     ws.onopen = () => {
       ws.send(JSON.stringify({ id: 1, method: "Network.getAllCookies" }));
+      ws.send(
+        JSON.stringify({
+          id: 2,
+          method: "Runtime.evaluate",
+          params: {
+            expression: `JSON.stringify({platform: navigator.userAgentData?.platform ?? null, brands: navigator.userAgentData?.brands ?? null})`,
+            returnByValue: true,
+          },
+        }),
+      );
     };
 
     ws.onmessage = (event) => {
       const data = JSON.parse(String(event.data));
-      if (data.id !== 1) return;
-      clearTimeout(timeout);
-      ws.close();
-      if (data.error) {
-        reject(new AuthError(`CDP error: ${data.error.message}`, EXIT.UNAVAILABLE));
+
+      if (data.id === 1) {
+        if (data.error) {
+          clearTimeout(timeout);
+          ws.close();
+          reject(new AuthError(`CDP error: ${data.error.message}`, EXIT.UNAVAILABLE));
+          return;
+        }
+        cookies = data.result.cookies as CdpCookie[];
+        settle();
         return;
       }
-      resolve(data.result.cookies as CdpCookie[]);
+
+      if (data.id === 2) {
+        // Best-effort: plain Chromium reports empty hints, and a restricted
+        // page can fail the eval outright. deriveIdentity falls back to the
+        // UA string in both cases, so this never blocks auth.
+        try {
+          hints = JSON.parse(data.result?.result?.value) as UaData;
+        } catch {
+          hints = undefined;
+        }
+        hintsDone = true;
+        settle();
+      }
     };
 
     ws.onerror = (err) => {
@@ -205,6 +256,19 @@ export async function extractCookies(port: number): Promise<ExtractedCookies> {
       reject(new AuthError(`WebSocket error: ${err}`, EXIT.UNAVAILABLE));
     };
   });
+
+  // The browser's own UA, straight from the CDP endpoint — present even when
+  // the browser has no usable page target.
+  const versionResp = await fetch(`http://127.0.0.1:${port}/json/version`).catch(
+    () => null,
+  );
+  const browserUserAgent = versionResp?.ok
+    ? ((await versionResp.json()) as { "User-Agent"?: string })["User-Agent"]
+    : undefined;
+  const identity = deriveIdentity(
+    browserUserAgent || FALLBACK_IDENTITY.userAgent,
+    uaData,
+  );
 
   const allBrowserCookies: BrowserCookie[] = cdpCookies
     .filter((c) => isScholarlyDomain(c.domain))
@@ -231,5 +295,5 @@ export async function extractCookies(port: number): Promise<ExtractedCookies> {
     throw notSignedIn("Google Scholar", port);
   }
 
-  return { googleCookies, allBrowserCookies };
+  return { googleCookies, allBrowserCookies, identity };
 }
