@@ -16,6 +16,8 @@ jobs:
             target: darwin-arm64
           - os: ubuntu-latest
             target: linux-x64
+          - os: ubuntu-latest
+            target: linux-arm64
           - os: windows-latest
             target: windows-x64
     runs-on: ${{ matrix.os }}
@@ -24,7 +26,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       - run: bun install
       - name: Build
-        run: bun build src/main.ts --compile --outfile scholar-${{ matrix.target }}
+        run: bun build src/main.ts --compile --target=bun-${{ matrix.target }} --outfile scholar-${{ matrix.target }}
       - uses: actions/upload-artifact@v4
         with:
           name: scholar-${{ matrix.target }}
