@@ -78,6 +78,12 @@ scholar lookup "fama french three factor model"
 scholar lookup "machine learning" --json
 scholar lookup "asset pricing" --bibtex
 scholar lookup "deep learning" --download
+
+# Restrict to a journal (lookup only); repeat the flag for more than one
+scholar lookup "shareholder voting" --journal "Virginia Law & Business Review"
+scholar lookup "corporate governance" \
+  --journal "Harvard Business Law Review" \
+  --journal "Columbia Business Law Review"
 ```
 
 ### Cite (BibTeX by cluster ID)
@@ -102,9 +108,34 @@ scholar download "https://arxiv.org/pdf/1706.03762" --output attention.pdf
 | `--download` | Download PDFs for results with full-text links |
 | `--interactive` | Interactive REPL mode for search |
 | `--limit <n>` | Keep only the first n results (search/lookup) |
+| `--journal <name>` | Restrict to a journal (**lookup only**); repeat for more than one |
 | `--port <n>` | Chrome CDP port (default: 9250) |
 | `--output <path>` | Output file path for download (default: paper.pdf) |
 | `--help` | Show help |
+
+## Journal filtering
+
+`--journal` restricts results server-side using Scholar's undocumented
+`source:"..."` operator, OR-ing multiple journals. It works on `lookup` only:
+Scholar Labs (`search`) rewrites the query into its own and swallows the
+operator, so `search --journal` errors out rather than silently returning
+unfiltered results.
+
+Scholar's own `as_publication=` parameter is accepted and then ignored, which is
+why the operator is used instead. Both behaviors are pinned by the live tests in
+`tests/journal-query.test.ts`:
+
+```bash
+SCHOLAR_LIVE=1 bun test tests/journal-query.test.ts
+```
+
+They are skipped by default (they need auth cookies and the network). If Google
+drops `source:`, the filter would fail *quietly* — the query still returns
+results, just unfiltered ones — so run these before trusting a journal-filtered
+search after a Scholar change.
+
+The terms ride inside `q`, which Scholar truncates past ~256 characters, so
+`lookup` refuses a journal list long enough to crowd out the query itself.
 
 ## Exit codes
 

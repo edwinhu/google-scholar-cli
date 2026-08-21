@@ -4,10 +4,21 @@ import { DEFAULT_CDP_PORT, exitCodeFor } from "./cdp.js";
 // Parse global flags from argv
 export function parseFlags(argv: string[]): {
   args: string[];
-  flags: Record<string, string | boolean>;
+  flags: Record<string, string | boolean | string[]>;
 } {
   const args: string[] = [];
-  const flags: Record<string, string | boolean> = {};
+  const flags: Record<string, string | boolean | string[]> = {};
+
+  // A repeated value flag accumulates instead of overwriting, so --journal can
+  // be given once per journal. Consumers that expect a scalar keep their
+  // `typeof x === "string"` guards and simply ignore the array form.
+  const setFlag = (key: string, value: string): void => {
+    const prev = flags[key];
+    if (prev === undefined) flags[key] = value;
+    else if (Array.isArray(prev)) prev.push(value);
+    else if (typeof prev === "string") flags[key] = [prev, value];
+    else flags[key] = value;
+  };
 
   let i = 0;
   while (i < argv.length) {
@@ -22,7 +33,7 @@ export function parseFlags(argv: string[]): {
       const key = a.slice(2);
       // Check if next arg is a value (not another flag)
       if (i + 1 < argv.length && !argv[i + 1].startsWith("--")) {
-        flags[key] = argv[i + 1];
+        setFlag(key, argv[i + 1]);
         i += 2;
       } else {
         flags[key] = true;
@@ -63,6 +74,18 @@ async function main(): Promise<number> {
     return 1;
   }
 
+  // --journal may repeat; normalize the scalar/array/bare forms to a list.
+  const journals =
+    typeof flags.journal === "string"
+      ? [flags.journal]
+      : Array.isArray(flags.journal)
+        ? flags.journal
+        : [];
+  if (flags.journal === true) {
+    printError('--journal requires a journal name (e.g. --journal "Harvard Business Law Review")');
+    return 1;
+  }
+
   // Global flags
   const globalFlags = {
     json: !!flags.json,
@@ -73,6 +96,7 @@ async function main(): Promise<number> {
     download: !!flags.download,
     output: typeof flags.output === "string" ? flags.output : undefined,
     limit,
+    journals,
   };
 
   const cmd = args[0];
@@ -127,6 +151,7 @@ Commands:
 Global Flags:
   --json             Output as JSON
   --limit <n>        Keep only the first n results (search/lookup)
+  --journal <name>   Restrict to a journal (lookup only); repeat for more
   --port <n>         Chrome CDP port (default: ${DEFAULT_CDP_PORT}, or $SCHOLAR_CDP_PORT / $CDP_PORT)
   --interactive      Interactive REPL mode for search
   --bibtex           Fetch BibTeX citations for search/lookup results

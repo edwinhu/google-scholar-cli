@@ -7,6 +7,7 @@ import { parseScholarPage, parseResultCount } from "../util/html.js";
 import { injectAbstract } from "../util/bibtex.js";
 import { sanitizeFilename } from "../util/filename.js";
 import { applyLimit } from "../util/limit.js";
+import { buildJournalQuery, MAX_QUERY_LENGTH } from "../util/query.js";
 import { blocked, exitCodeFor, cdpPort } from "../cdp.js";
 import { printTable, printJson, printError, printProgress } from "../output.js";
 import type { Cookies, BrowserCookie } from "../auth.js";
@@ -18,6 +19,7 @@ interface LookupFlags {
   bibtex: boolean;
   download: boolean;
   limit?: number;
+  journals?: string[];
 }
 
 function cookieHeader(cookies: Cookies): string {
@@ -49,10 +51,21 @@ export async function cmdLookup(
     return 0;
   }
 
-  const query = args.join(" ");
+  const rawQuery = args.join(" ");
 
-  if (!query) {
+  if (!rawQuery) {
     printError('No query provided. Usage: scholar lookup "keyword search"');
+    return 1;
+  }
+
+  // source: terms ride inside q, so a long journal list crowds out the query
+  // itself. Scholar truncates silently, so refuse rather than return nonsense.
+  const query = buildJournalQuery(rawQuery, flags.journals ?? []);
+  if (query.length > MAX_QUERY_LENGTH) {
+    printError(
+      `Query is ${query.length} chars after adding ${(flags.journals ?? []).length} --journal terms; ` +
+        `Scholar drops terms past ~${MAX_QUERY_LENGTH}. Use fewer journals per search.`,
+    );
     return 1;
   }
 
@@ -242,6 +255,8 @@ Usage: scholar lookup "query" [options]
 Options:
   --json       Output as JSON
   --limit <n>  Keep only the first n results
+  --journal <name>  Restrict to a journal; repeat the flag for more than one.
+               Uses Scholar's undocumented source: operator.
   --bibtex     Fetch BibTeX citations for each result (with abstract)
   --download   Download PDFs for results with full-text links
   --help       Show this help

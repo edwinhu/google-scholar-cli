@@ -18,6 +18,7 @@ interface SearchFlags {
   bibtex: boolean;
   download: boolean;
   limit?: number;
+  journals?: string[];
 }
 
 export async function cmdSearch(
@@ -27,6 +28,16 @@ export async function cmdSearch(
   if (flags.help) {
     printSearchUsage();
     return 0;
+  }
+
+  // Labs rewrites the question into its own queries, so a source: term is
+  // swallowed and the filter silently does nothing. Refuse instead.
+  if ((flags.journals ?? []).length > 0) {
+    printError(
+      "--journal is not supported by search: Scholar Labs rewrites the query " +
+        "and ignores source: terms. Use `scholar lookup` for journal filtering.",
+    );
+    return 1;
   }
 
   const query = args.join(" ");
