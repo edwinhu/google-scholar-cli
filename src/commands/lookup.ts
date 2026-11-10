@@ -8,6 +8,7 @@ import { injectAbstract } from "../util/bibtex.js";
 import { sanitizeFilename } from "../util/filename.js";
 import { applyLimit } from "../util/limit.js";
 import { buildJournalQuery, MAX_QUERY_LENGTH } from "../util/query.js";
+import { resolveCourts, caseLawSdt } from "../util/courts.js";
 import { blocked, exitCodeFor, cdpPort } from "../cdp.js";
 import { printTable, printJson, printError, printProgress } from "../output.js";
 import type { Cookies, BrowserCookie } from "../auth.js";
@@ -20,6 +21,8 @@ interface LookupFlags {
   download: boolean;
   limit?: number;
   journals?: string[];
+  cases?: boolean;
+  courts?: string[];
 }
 
 function cookieHeader(cookies: Cookies): string {
@@ -58,6 +61,26 @@ export async function cmdLookup(
     return 1;
   }
 
+  // --court implies --cases. Resolve names before any network call so a typo
+  // fails fast instead of silently searching every court.
+  const courts = flags.courts ?? [];
+  const cases = !!flags.cases || courts.length > 0;
+  let sdtParam = "";
+  if (cases) {
+    if ((flags.journals ?? []).length > 0) {
+      printError("--journal searches articles; it can't be combined with --cases or --court.");
+      return 1;
+    }
+    const { ids, unknown } = resolveCourts(courts);
+    if (unknown.length > 0) {
+      printError(
+        `Unknown court: ${unknown.join(", ")}. Run \`scholar courts <filter>\` to list names (e.g. scholar courts utah).`,
+      );
+      return 1;
+    }
+    sdtParam = `&as_sdt=${encodeURIComponent(caseLawSdt(ids))}`;
+  }
+
   // source: terms ride inside q, so a long journal list crowds out the query
   // itself. Scholar truncates silently, so refuse rather than return nonsense.
   const query = buildJournalQuery(rawQuery, flags.journals ?? []);
@@ -78,7 +101,7 @@ export async function cmdLookup(
       ? readFileSync(INST_FILE, "utf-8").trim()
       : "";
     const instParam = inst ? `&inst=${inst}` : "";
-    const url = `${API_BASE}/scholar?q=${encodeURIComponent(query)}&hl=en${instParam}`;
+    const url = `${API_BASE}/scholar?q=${encodeURIComponent(query)}&hl=en${sdtParam}${instParam}`;
     const resp = await fetch(url, {
       headers: {
         Cookie: scholarCookieHeader(cookies, allCookies),
@@ -109,8 +132,15 @@ export async function cmdLookup(
       return 1;
     }
 
-    if (count) {
+    // gs_ab_mdw can hold sidebar text ("Case law", "Articles") instead of the
+    // result count; only print a real count.
+    if (count && /result/i.test(count)) {
       console.error(count);
+    }
+
+    if (cases && !flags.bibtex && !flags.download) {
+      printCaseResults(results, !!flags.json);
+      return 0;
     }
 
     if (flags.bibtex) {
@@ -157,6 +187,60 @@ export async function cmdLookup(
     process.stderr.write("\r\x1b[K");
     printError(err instanceof Error ? err.message : String(err));
     return exitCodeFor(err);
+  }
+}
+
+/** Make a Scholar-relative link absolute. */
+function absolute(url: string): string {
+  return url.startsWith("/") ? `${API_BASE}${url}` : url;
+}
+
+/**
+ * Print case-law results. Scholar's byline for a case is
+ * "Citation - Court, Year - Google Scholar", which parseResultCard stores as
+ * authors / journal / year, so relabel those fields here.
+ */
+function printCaseResults(results: ScholarResult[], json: boolean): void {
+  const cases = results.map((r) => ({
+    position: r.position + 1,
+    case: r.title,
+    citation: r.authors,
+    court: r.journal,
+    year: r.year,
+    citedBy: r.citations,
+    url: absolute(r.url),
+    links: r.fullTextLinks
+      .filter((l) => l.url && !l.url.startsWith("javascript:"))
+      .map((l) => ({ label: l.label, url: absolute(l.url) })),
+    snippet: r.snippet,
+    clusterId: r.clusterId,
+  }));
+
+  if (json) {
+    printJson(cases);
+    return;
+  }
+
+  const clip = (s: string, n: number) => (s.length > n ? s.slice(0, n - 3) + "..." : s);
+  printTable(
+    ["#", "Case", "Citation", "Court", "Year", "Cited"],
+    cases.map((c) => [
+      String(c.position),
+      clip(c.case, 40),
+      clip(c.citation, 32),
+      clip(c.court, 30),
+      c.year,
+      String(c.citedBy),
+    ]),
+  );
+
+  console.log("");
+  for (const c of cases) {
+    console.log(`[${c.position}] ${c.case}, ${c.citation} (${c.court}${c.year ? ", " + c.year : ""})`);
+    if (c.snippet) console.log(`    ${c.snippet}`);
+    if (c.url) console.log(`    ${c.url}`);
+    for (const l of c.links) console.log(`    ${l.label}: ${l.url}`);
+    console.log("");
   }
 }
 
@@ -259,6 +343,11 @@ Options:
                Uses Scholar's undocumented source: operator.
   --bibtex     Fetch BibTeX citations for each result (with abstract)
   --download   Download PDFs for results with full-text links
+  --cases      Search case law instead of articles (all courts)
+  --court <name>  Restrict case law to a court; repeat for more. Implies
+               --cases. Names like "utah", "utah supreme court", "10th cir",
+               "ca10", "d utah", "scotus", or raw Scholar court IDs.
+               List them with: scholar courts [filter]
   --help       Show this help
 
 Examples:
@@ -266,5 +355,7 @@ Examples:
   scholar lookup "author:hinton deep learning" --json
   scholar lookup "machine learning transformers" --limit 3
   scholar lookup "attention is all you need" --bibtex
-  scholar lookup "attention is all you need" --download`);
+  scholar lookup "attention is all you need" --download
+  scholar lookup "franks hearing" --cases --limit 5
+  scholar lookup "franks hearing" --court utah --court ca10`);
 }
