@@ -1,7 +1,11 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-export const CONFIG_DIR = join(homedir(), ".google-scholar");
+// SCHOLAR_CONFIG_DIR overrides the location. The test preload
+// (tests/setup.ts) points it at a temp directory so the suite never touches
+// the user's real cookies.
+export const CONFIG_DIR =
+  process.env.SCHOLAR_CONFIG_DIR || join(homedir(), ".google-scholar");
 export const COOKIES_FILE = join(CONFIG_DIR, "cookies");
 export const BROWSER_COOKIES_FILE = join(CONFIG_DIR, "browser-cookies");
 export const INST_FILE = join(CONFIG_DIR, "inst");
