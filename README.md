@@ -5,7 +5,7 @@ A zero-dependency CLI for searching Google Scholar, fetching citations, and down
 ## Features
 
 - **Search** — Google Scholar Labs AI-enhanced search with streaming progress
-- **Lookup** — Traditional Google Scholar keyword search
+- **Lookup** — Traditional Google Scholar keyword search, including case law (`--cases`, `--court`)
 - **Cite** — Fetch BibTeX citations by cluster ID
 - **Download** — Download PDFs with redirect-following and cookie forwarding
 - **Auth** — Extract Google session cookies from a running Chrome instance via CDP
@@ -84,6 +84,15 @@ scholar lookup "shareholder voting" --journal "Virginia Law & Business Review"
 scholar lookup "corporate governance" \
   --journal "Harvard Business Law Review" \
   --journal "Columbia Business Law Review"
+
+# Case law, all courts
+scholar lookup "franks hearing" --cases --limit 5
+
+# Case law in specific courts; repeat --court (implies --cases)
+scholar lookup "franks hearing material omission" --court utah --court ca10
+
+# List court names accepted by --court
+scholar courts utah
 ```
 
 ### Cite (BibTeX by cluster ID)
@@ -109,6 +118,8 @@ scholar download "https://arxiv.org/pdf/1706.03762" --output attention.pdf
 | `--interactive` | Interactive REPL mode for search |
 | `--limit <n>` | Keep only the first n results (search/lookup) |
 | `--journal <name>` | Restrict to a journal (**lookup only**); repeat for more than one |
+| `--cases` | Search case law instead of articles (**lookup only**) |
+| `--court <name>` | Restrict case law to a court (**lookup only**); repeat for more than one; implies `--cases` |
 | `--port <n>` | Chrome CDP port (default: 9250) |
 | `--output <path>` | Output file path for download (default: paper.pdf) |
 | `--help` | Show help |
@@ -136,6 +147,26 @@ search after a Scholar change.
 
 The terms ride inside `q`, which Scholar truncates past ~256 characters, so
 `lookup` refuses a journal list long enough to crowd out the query itself.
+
+## Case law
+
+`--cases` sends `as_sdt=2006`, Scholar's "Case law" setting across all
+courts. `--court` sends `as_sdt=4,<ids>`, the same value Scholar's court
+picker submits, with the IDs for every court named. It accepts:
+
+- states (`utah`) or a state's courts (`utah supreme court`, `Utah Ct. App.`)
+- circuits, with or without their district courts (`10th cir`, `ca10`)
+- district courts (`D. Utah`), `scotus`, and other federal courts
+- raw Scholar court IDs (`45`, `120,106`)
+
+Unknown names fail before any request. `scholar courts [filter]` lists the
+accepted names. The table in `src/util/courts-data.ts` was generated from the
+checkbox values on `scholar.google.com/scholar_courts`; regenerate it if
+Scholar adds courts.
+
+Case results print as case, citation, court, year and cited-by, with links to
+the opinion (`scholar_case`) and its "How cited" page. `--json` emits the same
+fields. `--journal` can't be combined with case law.
 
 ## Exit codes
 

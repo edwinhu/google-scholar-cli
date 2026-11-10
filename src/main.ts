@@ -86,6 +86,17 @@ async function main(): Promise<number> {
     return 1;
   }
 
+  const courts =
+    typeof flags.court === "string"
+      ? [flags.court]
+      : Array.isArray(flags.court)
+        ? flags.court
+        : [];
+  if (flags.court === true) {
+    printError('--court requires a court name (e.g. --court utah). List them with: scholar courts');
+    return 1;
+  }
+
   // Global flags
   const globalFlags = {
     json: !!flags.json,
@@ -97,6 +108,8 @@ async function main(): Promise<number> {
     output: typeof flags.output === "string" ? flags.output : undefined,
     limit,
     journals,
+    cases: !!flags.cases,
+    courts,
   };
 
   const cmd = args[0];
@@ -119,6 +132,13 @@ async function main(): Promise<number> {
     case "lookup": {
       const { cmdLookup } = await import("./commands/lookup.js");
       return cmdLookup(cmdArgs, globalFlags);
+    }
+    case "courts": {
+      const { listCourts } = await import("./util/courts.js");
+      const rows = listCourts(cmdArgs.join(" "));
+      if (globalFlags.json) console.log(JSON.stringify(Object.fromEntries(rows), null, 2));
+      else for (const [name, ids] of rows) console.log(`${name}\t${ids}`);
+      return rows.length > 0 ? 0 : 1;
     }
     case "cite": {
       const { cmdCite } = await import("./commands/cite.js");
@@ -144,6 +164,7 @@ Commands:
   auth          Authenticate via Chrome CDP cookie extraction
   search        Search Google Scholar Labs (AI-enhanced)
   lookup        Traditional Google Scholar keyword search
+  courts        List court names for lookup --court (optional filter)
   cite          Fetch BibTeX citations by cluster ID
   download      Download a PDF from a URL (LibKey, direct link, etc.)
   help          Show this help
@@ -152,6 +173,8 @@ Global Flags:
   --json             Output as JSON
   --limit <n>        Keep only the first n results (search/lookup)
   --journal <name>   Restrict to a journal (lookup only); repeat for more
+  --cases            Search case law instead of articles (lookup only)
+  --court <name>     Restrict case law to a court; repeat for more (implies --cases)
   --port <n>         Chrome CDP port (default: ${DEFAULT_CDP_PORT}, or $SCHOLAR_CDP_PORT / $CDP_PORT)
   --interactive      Interactive REPL mode for search
   --bibtex           Fetch BibTeX citations for search/lookup results

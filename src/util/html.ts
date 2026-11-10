@@ -60,6 +60,7 @@ function decodeEntities(text: string): string {
     .replace(/&#39;/g, "'")
     .replace(/&#8208;/g, "-")
     .replace(/&uuml;/g, "\u00FC")
+    .replace(/&nbsp;/g, "\u00A0")
     .replace(/&#(\d+);/g, (_match, code) => String.fromCharCode(Number(code)));
 }
 
@@ -155,12 +156,18 @@ function parseGsA(gsAText: string): {
   }
 
   // Split on " - " (space-dash-space)
-  const parts = gsAText.split(" - ");
+  // Case-law bylines use "&nbsp;- " before the court, so match any
+  // whitespace (\s includes U+00A0) around the dash.
+  const parts = gsAText.split(/\s+-\s+/);
 
   const authors = (parts[0] || "").trim();
 
-  // Extract year: 4-digit number anywhere in the full text
-  const yearMatch = gsAText.match(/\b(\d{4})\b/);
+  // Extract year: prefer the year that ends the middle part ("Journal, 2014";
+  // for case law "Utah: Supreme Court, 2014"), since case citations in the
+  // first part ("850 P. 2d 1201") contain 4-digit page numbers. Fall back to
+  // the first 4-digit number anywhere.
+  const midYear = parts.length >= 2 ? parts[1].match(/\b(\d{4})\s*$/) : null;
+  const yearMatch = midYear ?? gsAText.match(/\b(\d{4})\b/);
   const year = yearMatch ? yearMatch[1] : "";
 
   // Journal is the middle part, strip the year and trailing comma
